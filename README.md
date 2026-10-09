@@ -2,7 +2,8 @@
 
 Jogo de aventura **2D de plataforma lateral** feito com Python e Pygame. Jogue os tres capitulos, recolha os livros, vença o Revisor e registre seu nome no **ranking Top 5**.
 
-![Captura da batalha final de Tinta e Esquecimento Alfa](docs/captura-alfa.png)
+![Uploading image.png…]()
+
 
 > Imagem da versao Alfa. O projeto atualizado inclui Ilo azul, novos efeitos e trilhas originais.
 
