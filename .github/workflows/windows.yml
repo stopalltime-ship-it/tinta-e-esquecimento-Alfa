@@ -1,0 +1,22 @@
+name: Build Alfa Windows
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: python -m pip install -r requirements-build.txt
+      - name: Build and smoke-test Windows
+        run: python build_windows.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TintaEEsquecimentoAlfa-Windows
+          path: dist/TintaEEsquecimentoAlfa-Windows.zip
+          if-no-files-found: error
