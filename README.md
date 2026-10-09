@@ -5,6 +5,8 @@ Jogo de aventura **2D de plataforma lateral** feito com Python e Pygame. Jogue o
 
 
 
+![Capa ilustrada de Tinta e Esquecimento Alfa com Ilo azul](docs/captura-alfa.png)
+
 > Imagem da versao Alfa. O projeto atualizado inclui Ilo azul, novos efeitos e trilhas originais.
 
 ## Como jogar no VS Code (Windows)
