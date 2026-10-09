@@ -1,6 +1,6 @@
-"""Baixa apenas os recursos publicos da demo original que estao ausentes.
-A distribuicao ZIP completa ja traz os recursos enviados pelo autor, incluindo
-menu_music.ogg. Nenhum recurso local existente sera substituido.
+"""Restaura recursos do pacote de texto interno e, como ultima alternativa,
+baixa somente imagens originais que tenham copias publicas disponiveis.
+As trilhas originais novas ja vem no ZIP ou no pacote interno (sem download).
 """
 from pathlib import Path
 import base64
@@ -14,9 +14,12 @@ SOURCES = {
  'images/scene_2.png':'images/mapa_montanhas.png',
  'images/scene_3.png':'images/ultima_pagina_ceu.png',
  'audio/confirm.wav':'audio/menu_confirm.wav',
- 'audio/forest.ogg':'audio/ambiente_contos.ogg',
- 'audio/bells.ogg':'audio/sinos_revisor.ogg',
- 'audio/menu_music.ogg':'audio/ambiente_contos.ogg',
+ 'images/ilo_azul.png':None,
+ 'audio/trilha_menu.ogg':None,
+ 'audio/trilha_capitulo1.ogg':None,
+ 'audio/trilha_capitulo2.ogg':None,
+ 'audio/trilha_boss.ogg':None,
+ 'audio/trilha_vitoria.ogg':None,
 }
 def main():
     failed=[]
@@ -33,6 +36,10 @@ def main():
                 continue
             except (ValueError, OSError) as err:
                 print('Pacote interno falhou:',err, file=sys.stderr)
+        if origin is None:
+            print('Recurso interno ausente:',relative,file=sys.stderr)
+            failed.append(relative)
+            continue
         try:
             print('Obtendo:',relative)
             with urlopen(BASE+origin,timeout=30) as response:

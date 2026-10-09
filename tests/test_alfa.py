@@ -42,4 +42,57 @@ class GameplayTests(unittest.TestCase):
                 self.assertEqual(reopened['music'],.6)
                 self.assertEqual(reopened['effects'],.2)
 
+
+
+class AccessibilityAndEndingTests(unittest.TestCase):
+    def test_books_follow_platforms_reachable_from_floor(self):
+        for level in range(3):
+            world = main.World(level)
+            for platform in world.platforms[1:]:
+                self.assertLessEqual(world.FLOOR - platform.top, 85)
+            for x, y in world.books:
+                self.assertTrue(any(plat.left <= x <= plat.right and plat.top - y == 35
+                                    for plat in world.platforms[1:]))
+
+    def test_boss_end_returns_name_without_extra_enter(self):
+        class Keys:
+            def __getitem__(self, key):
+                return False
+        world = main.World(2, 900)
+        world.boss_unlocked = True
+        boss = next(e for e in world.enemies if e.boss)
+        world.damage_enemy(boss, boss.hp)
+        self.assertEqual(world.update(.016, Keys()), 'name')
+        self.assertGreater(world.score, 900)
+
+    def test_name_screen_is_drawn_without_keypress(self):
+        from unittest.mock import Mock
+        game = object.__new__(main.Game)
+        game.draw = Mock()
+        game.state = 'name'
+        game.world = main.World(2)
+        game.name = 'Jogador'
+        game.time = 0
+        with patch.object(main.pygame.display, 'flip'):
+            main.Game.draw_frame(game)
+        self.assertEqual(game.draw.overlay.call_count, 1)
+        args = game.draw.overlay.call_args.args
+        self.assertIn('REGISTRE SEU NOME', args[0])
+        self.assertTrue(any('Jogador' in line for line in args[1]))
+
+    def test_enter_saves_name_once(self):
+        from unittest.mock import patch as patched
+        game = object.__new__(main.Game)
+        game.state = 'name'
+        game.name = 'Ana'
+        game.name_ready = 0
+        game.world = main.World(2, 333)
+        game.save = {'music': .7, 'effects': .8, 'rankings': []}
+        with patched.object(main.pygame.key, 'stop_text_input'), patched.object(main, 'save_settings'):
+            main.Game.event(game, main.pygame.event.Event(main.pygame.KEYDOWN, {'key': main.pygame.K_RETURN}))
+            main.Game.event(game, main.pygame.event.Event(main.pygame.KEYDOWN, {'key': main.pygame.K_RETURN}))
+        self.assertEqual(game.state, 'menu')  # Enter da tela final retorna ao menu.
+        self.assertEqual(len(game.save['rankings']), 1)
+        self.assertEqual(game.save['rankings'][0]['name'], 'Ana')
+
 if __name__=='__main__':unittest.main()

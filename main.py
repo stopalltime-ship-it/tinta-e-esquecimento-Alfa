@@ -101,19 +101,21 @@ class Audio:
     def music(self, scene):
         if not self.available:
             return
-        track = {0: 'menu_music.ogg', 1: 'forest.ogg', 2: 'bells.ogg'}.get(scene, 'menu_music.ogg')
+        track = {0: 'trilha_menu.ogg', 1: 'trilha_capitulo1.ogg',
+                 2: 'trilha_capitulo2.ogg', 3: 'trilha_boss.ogg',
+                 4: 'trilha_vitoria.ogg'}.get(scene, 'trilha_menu.ogg')
         if track != self.current:
             self.current = track
             path = ASSETS / 'audio' / track
             if not path.exists():
-                # Com repositorios antigos, aproveitar trilha antiga se disponivel.
-                fallback = ASSETS / 'audio' / {'menu_music.ogg': 'ambiente_contos.ogg',
-                                               'forest.ogg': 'ambiente_mapas.ogg',
-                                               'bells.ogg': 'sinos_revisor.ogg'}[track]
-                path = fallback
+                # Permite abrir projetos antigos sem as trilhas novas.
+                fallback = {0: 'menu_music.ogg', 1: 'forest.ogg',
+                            2: 'forest.ogg', 3: 'bells.ogg',
+                            4: 'menu_music.ogg'}.get(scene, 'menu_music.ogg')
+                path = ASSETS / 'audio' / fallback
             try:
                 pygame.mixer.music.load(str(path))
-                pygame.mixer.music.play(-1, fade_ms=250)
+                pygame.mixer.music.play(-1, fade_ms=650)
             except (pygame.error, FileNotFoundError):
                 self.current = None
         pygame.mixer.music.set_volume(self.settings['music'] * 0.55)
@@ -132,6 +134,7 @@ class Player:
         self.shield = 0.0
         self.invul = 0.0
         self.shot_cd = 0.0
+        self.melee_flash = 0.0  # Duracao da animacao curta ao apertar ESPACO.
         self.anim = 0.0
 
     @property
@@ -178,22 +181,29 @@ class World:
         self.gap = (1190, 1350) if chapter == 1 else None
         self.books = []  # (x, y) no topo de plataformas / superficie
         self.platforms = [pygame.Rect(0, self.FLOOR, self.width, H-self.FLOOR)]
-        # Plataformas progressivas; salto maximo >100px para evitar becos sem saida.
+        # Todas as plataformas ficam ao alcance do salto (altura fisica ~120px).
+        # Livros acompanham automaticamente a altura de cada plataforma.
         if chapter == 0:
-            self.platforms += [pygame.Rect(390, 505, 260, 20), pygame.Rect(850, 475, 230, 20),
-                               pygame.Rect(1500, 490, 260, 20)]
-            self.books = [[485, 470], [946, 440], [1630, 455]]
+            self.platforms += [pygame.Rect(390, 530, 260, 20), pygame.Rect(850, 525, 230, 20),
+                               pygame.Rect(1500, 530, 260, 20)]
+            book_x = [485, 946, 1630]
             enemy_x = [710, 1230, 1910]
         elif chapter == 1:
-            self.platforms += [pygame.Rect(355, 502, 250, 20), pygame.Rect(960, 498, 195, 20),
-                               pygame.Rect(1560, 505, 240, 20), pygame.Rect(2130, 487, 220, 20)]
-            self.books = [[465, 465], [1690, 470], [2220, 450]]
+            self.platforms += [pygame.Rect(355, 530, 250, 20), pygame.Rect(960, 530, 195, 20),
+                               pygame.Rect(1560, 530, 240, 20), pygame.Rect(2130, 525, 220, 20)]
+            book_x = [465, 1690, 2220]
             enemy_x = [770, 1470, 1990, 2550]
         else:
-            self.platforms += [pygame.Rect(370, 502, 265, 20), pygame.Rect(950, 500, 270, 20),
-                               pygame.Rect(1470, 500, 250, 20)]
-            self.books = [[470, 466], [1055, 464], [1585, 464]]
+            self.platforms += [pygame.Rect(370, 530, 265, 20), pygame.Rect(950, 530, 270, 20),
+                               pygame.Rect(1470, 530, 250, 20)]
+            book_x = [470, 1055, 1585]
             enemy_x = [775, 1360, 1820]
+        if chapter == 1:
+            book_platform_indices = (0, 2, 3)
+        else:
+            book_platform_indices = (0, 1, 2)
+        self.books = [[x, self.platforms[i + 1].top - 35]
+                      for x, i in zip(book_x, book_platform_indices)]
         self.enemies = [Enemy(x, self.FLOOR-51) for x in enemy_x]
         if chapter == 2:
             self.enemies.append(Enemy(2355, self.FLOOR-98, True))
@@ -281,6 +291,7 @@ class World:
             return False
         p.ink -= 5
         p.shot_cd = 0.3
+        p.melee_flash = 0.18
         for e in self.enemies:
             if abs((e.x+e.w/2)-(p.x+p.w/2)) < 83 and abs(e.rect.centery-p.rect.centery) < 80 and (e.x-p.x)*p.face >= -5:
                 self.damage_enemy(e, 19)
@@ -317,6 +328,8 @@ class World:
         return True
 
     def damage_enemy(self, e, amount):
+        if e.hp <= 0:
+            return False  # Nao pontuar duas vezes para inimigo ja vencido.
         if e.boss and not self.boss_unlocked:
             self.tell('O Revisor esta protegido! 3 livros + F no pedestal.', 3.4)
             return False
@@ -331,7 +344,7 @@ class World:
         dt = min(dt, 0.04)
         self.time += dt
         p = self.player
-        for name in ('invul', 'shot_cd', 'shield'):
+        for name in ('invul', 'shot_cd', 'shield', 'melee_flash'):
             setattr(p, name, max(0, getattr(p, name)-dt))
         self.message_timer = max(0, self.message_timer-dt)
         self.heal_ready = [max(0, t-dt) for t in self.heal_ready]
@@ -426,19 +439,27 @@ class Draw:
             except (pygame.error, FileNotFoundError):
                 self.scenes.append(None)
         self.hero = []
+        self.hero_dimensions = (20, 24)
         try:
-            sheet = pygame.image.load(str(ASSETS/'images'/'classic_hero.png')).convert()
-            bg = sheet.get_at((0,0))
-            for i in (1,2,3,4):
-                frame = pygame.Surface((16,16),pygame.SRCALPHA)
-                for y in range(16):
-                    for x in range(16):
-                        c = sheet.get_at((i*16+x,16+y))
-                        if c != bg:
-                            frame.set_at((x,y),c)
-                self.hero.append(frame)
-        except (pygame.error, FileNotFoundError, IndexError):
-            self.hero = []
+            sheet = pygame.image.load(str(ASSETS/'images'/'ilo_azul.png')).convert_alpha()
+            for i in range(4):
+                self.hero.append(sheet.subsurface((i*20, 0, 20, 24)).copy())
+        except (pygame.error, FileNotFoundError, ValueError):
+            # Compatibilidade com copias anteriores do jogo.
+            self.hero_dimensions = (16, 16)
+            try:
+                sheet = pygame.image.load(str(ASSETS/'images'/'classic_hero.png')).convert()
+                bg = sheet.get_at((0, 0))
+                for i in (1, 2, 3, 4):
+                    frame = pygame.Surface((16, 16), pygame.SRCALPHA)
+                    for y in range(16):
+                        for x in range(16):
+                            c = sheet.get_at((i*16+x, 16+y))
+                            if c != bg:
+                                frame.set_at((x, y), c)
+                    self.hero.append(frame)
+            except (pygame.error, FileNotFoundError, IndexError):
+                self.hero = []
 
     def font(self, size):
         if size not in self.fonts:
@@ -474,16 +495,16 @@ class Draw:
 
     def hero_at(self,x,y,t,face=1,move=False,scale=3.0,hurt=False):
         if self.hero:
-            idx=(1+int(t*8)%3) if move else 0
-            sprite=pygame.transform.scale(self.hero[idx],(round(16*scale),round(16*scale)))
-            if face<0:
-                sprite=pygame.transform.flip(sprite,True,False)
+            idx = (1+int(t*8)%3) if move else 0
+            fw, fh = self.hero_dimensions
+            sprite = pygame.transform.scale(self.hero[idx],(round(fw*scale),round(fh*scale)))
+            if face < 0:
+                sprite = pygame.transform.flip(sprite,True,False)
             if hurt:
-                sprite.set_alpha(110)
+                sprite.set_alpha(115)
             self.s.blit(sprite,(int(x),int(y)))
         else:
             pygame.draw.rect(self.s,TEAL,(x,y,32,50),border_radius=5)
-        pygame.draw.line(self.s,GOLD,(x+24,y+28),(x+24+face*17,y+5),3)
 
     def title_bg(self,t):
         # Preserva a ilustracao original da arvore na capa.
@@ -582,11 +603,34 @@ class Draw:
                 pygame.draw.circle(self.s,DARK,(int(x+e.w*.35),int(y+20)),3)
                 pygame.draw.circle(self.s,DARK,(int(x+e.w*.68),int(y+20)),3)
         p=w.player
-        self.hero_at(p.x-camera,p.y,w.time,p.face,bool(p.anim and pygame.time.get_ticks()%650<450),3.3,p.invul>0 and int(w.time*12)%2==0)
+        # Centro visual compartilhado: personagem, escudo e ataque ficam alinhados.
+        hero_w, hero_h = 42, 50
+        hero_x = p.x-camera+(p.w-hero_w)/2
+        hero_y = p.y+p.h-hero_h
+        cx, cy = int(hero_x+hero_w/2), int(hero_y+hero_h/2)
+        if p.shield > 0:
+            shield_surface = pygame.Surface((90,90),pygame.SRCALPHA)
+            pygame.draw.circle(shield_surface,(*TEAL,38),(45,45),38)
+            pygame.draw.circle(shield_surface,(*TEAL,235),(45,45),38,3)
+            self.s.blit(shield_surface,(cx-45,cy-45))
+        self.hero_at(hero_x,hero_y,w.time,p.face,bool(p.anim and int(w.time*8)%3),
+                     scale=hero_w/20 if self.hero_dimensions == (20,24) else 3,
+                     hurt=p.invul>0 and int(w.time*12)%2==0)
         if p.crouch:
-            pygame.draw.arc(self.s,TEAL,(p.x-camera,p.y+23,40,25),0,math.pi,3)
-        if p.shield>0:
-            pygame.draw.ellipse(self.s,TEAL,(p.x-camera-16,p.y-10,66,76),3)
+            pygame.draw.arc(self.s,TEAL,(hero_x+6,hero_y+32,30,15),0,math.pi,2)
+        if p.melee_flash > 0:
+            # Curta curva de tinta somente ao atacar; nao ha barra fixa no caminho.
+            intensity = p.melee_flash / 0.18
+            slash = pygame.Surface((66,66),pygame.SRCALPHA)
+            color = (*TEAL, round(225*intensity))
+            if p.face > 0:
+                pygame.draw.arc(slash,color,(5,5,51,51),-1.02,1.02,4)
+                pygame.draw.circle(slash,(*PAPER,round(150*intensity)),(52,33),3)
+                self.s.blit(slash,(cx+6,cy-33))
+            else:
+                pygame.draw.arc(slash,color,(5,5,51,51),math.pi-1.02,math.pi+1.02,4)
+                pygame.draw.circle(slash,(*PAPER,round(150*intensity)),(14,33),3)
+                self.s.blit(slash,(cx-72,cy-33))
         for x,y,vx,vy,ttl,friendly,damage in w.projectiles:
             pygame.draw.circle(self.s,TEAL if friendly else RED,(int(x-camera),int(y)),7)
         pygame.draw.rect(self.s,DARK,(0,0,W,105))
@@ -626,6 +670,7 @@ class Game:
         self.running=True
         self.name=''
         self.last_name=''
+        self.name_ready=0.0
 
     def start(self,level=0,score=0):
         self.world=World(level,score)
@@ -695,7 +740,7 @@ class Game:
             elif k==pygame.K_ESCAPE:self.state='menu'
         elif self.state=='name':
             if k==pygame.K_BACKSPACE:self.name=self.name[:-1]
-            elif k==pygame.K_RETURN:
+            elif k==pygame.K_RETURN and self.name_ready<=0:
                 pygame.key.stop_text_input()
                 name=self.name.strip() or 'Ilo'
                 self.last_name=name
@@ -716,14 +761,25 @@ class Game:
 
     def update(self,dt):
         self.time+=dt
-        self.audio.music(0 if self.state in ('menu','config','credits','ranking','chapter','name','ending') else (2 if self.world.chapter==2 else 1))
+        if self.state in ('name', 'ending'):
+            scene_music = 4
+        elif self.state in ('menu', 'config', 'credits', 'ranking'):
+            scene_music = 0
+        else:
+            scene_music = self.world.chapter + 1
+        self.audio.music(scene_music)
+        if self.state == 'name':
+            self.name_ready = max(0, self.name_ready-dt)
+
         if self.state=='play':
             outcome=self.world.update(dt,pygame.key.get_pressed())
             if outcome:
                 self.state=outcome
                 if outcome=='name':
                     self.name=''
+                    self.name_ready=0.25
                     pygame.key.start_text_input()
+                    self.audio.play('page')
 
     def draw_frame(self):
         d=self.draw
@@ -743,8 +799,8 @@ class Game:
                 d.overlay('CREDITOS',[
                     'Conceito original: Emerson. Assistencia de programacao: IA.',
                     'Arte e cenarios: arquivos enviados / CraftPix Freebies.',
-                    'Personagem: GrafxKid (CC0). Ver CREDITOS.md.',
-                    'Audio: Packsmithy, newlocknew, benson_arizona, kevp888.',
+                    'Personagem azul: arte pixel feita para esta versao.',
+                    'Musicas originais e efeitos do jogo. Ver README.',
                 ],'ENTER ou ESC: voltar')
         elif self.state=='ending':
             d.title_bg(self.time)
@@ -769,6 +825,14 @@ class Game:
                     'Uma historia tambem pode descansar.',
                     'Use os livros verdes para restaurar vida e tinta.'
                 ],'ENTER ou ESC: voltar  |  R: reiniciar  |  BACKSPACE: menu')
+            elif self.state=='name':
+                # A tela de digitacao precisa aparecer ANTES de qualquer ENTER.
+                d.overlay('VITORIA! REGISTRE SEU NOME', [
+                    'O Revisor foi derrotado. Parabens!',
+                    'Pontuacao final: '+str(self.world.score),
+                    'Digite seu nome (ate 18 caracteres):',
+                    '> '+(self.name or '')+('|' if int(self.time*2)%2==0 else ' '),
+                ], 'ENTER: salvar nome e pontuacao no Top 5')
             elif self.state=='defeat':
                 d.overlay('PAGINA APAGADA',[
                     'O Vazio venceu desta vez, mas a historia continua.',
